@@ -1,16 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { InstitutionSelector } from "@/components/institution-selector";
 import type { InstitutionSummary } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { ValidationResults } from "@/components/validation-results";
-
-const PdfPreview = dynamic(
-  () => import("@/components/pdf-preview").then((m) => m.PdfPreview),
-  { ssr: false }
-);
+import { PdfPreview } from "@/components/pdf-preview";
 
 export default function Home() {
   const [institution, setInstitution] = useState<InstitutionSummary | null>(
