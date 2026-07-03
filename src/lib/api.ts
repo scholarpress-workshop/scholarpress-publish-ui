@@ -13,9 +13,27 @@ export async function fetchInstitutions(): Promise<InstitutionSummary[]> {
   return res.json();
 }
 
+export interface ExtractResult {
+  content: {
+    pages: Array<{ number: number; text: string }>;
+    raw_text: string;
+  };
+  structure: {
+    front_matter: Array<{ id: string; title: string | null; page_start: number }>;
+    body: Array<{ id: string; title: string | null; page_start: number }>;
+    end_matter: Array<{ id: string; title: string | null; page_start: number }>;
+  };
+  metadata: {
+    title: string | null;
+    author: string | null;
+    page_count: number;
+    detected_fonts: string[];
+  };
+}
+
 export async function extractDocument(
   file: File
-): Promise<{ content: string; metadata: Record<string, unknown> }> {
+): Promise<ExtractResult> {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(`${RUST_SERVICE_URL}/extract`, {

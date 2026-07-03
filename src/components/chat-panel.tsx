@@ -105,12 +105,20 @@ export function ChatPanel({
       setExtracting(true);
       try {
         const result = await extractDocument(file);
+        const text = result.content.raw_text;
+
+        await fetch("/api/state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, text }),
+        });
+
         const preview =
-          result.content.length > 500
-            ? result.content.slice(0, 500) + "..."
-            : result.content;
+          text.length > 8000
+            ? text.slice(0, 8000) + "\n\n[... content truncated, full document available ...]"
+            : text;
         sendMessage({
-          text: `I've uploaded my dissertation: ${file.name}\n\nExtracted content preview:\n${preview}\n\nFull content metadata: ${JSON.stringify(result.metadata)}`,
+          text: `I've uploaded my dissertation: ${file.name} (${result.metadata.page_count} pages detected)\n\nExtracted content:\n\n${preview}`,
         });
       } catch (err) {
         sendMessage({

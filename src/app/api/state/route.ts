@@ -1,4 +1,4 @@
-import { getState, getPdf } from "@/lib/store";
+import { getState, getPdf, storeExtraction } from "@/lib/store";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -20,4 +20,16 @@ export async function GET(req: Request) {
   }
 
   return Response.json(getState(sessionId));
+}
+
+export async function PUT(req: Request) {
+  const { sessionId, text } = await req.json();
+  if (!sessionId || !text) {
+    return Response.json(
+      { error: "Missing sessionId or text" },
+      { status: 400 }
+    );
+  }
+  storeExtraction(sessionId, text);
+  return Response.json({ ok: true });
 }

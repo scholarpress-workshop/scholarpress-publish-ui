@@ -1,25 +1,22 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { extractDocument, compileTypst, validatePdf } from "./api";
-import { storePdf, storeViolations, getPdf } from "./store";
+import { compileTypst, validatePdf } from "./api";
+import { storePdf, storeViolations, getPdf, getExtraction } from "./store";
 
 export function createTools(sessionId: string) {
   const extractDocumentTool = tool({
     description:
-      "Extract text content from an uploaded dissertation file (PDF, DOCX, or LaTeX). Call this when the student uploads a file.",
-    inputSchema: z.object({
-      fileName: z.string().describe("The name of the uploaded file"),
-      fileBytes: z
-        .array(z.number())
-        .describe("The raw bytes of the file"),
-      mimeType: z.string().describe("The MIME type of the file"),
-    }),
-    execute: async ({ fileName, fileBytes, mimeType }) => {
-      const file = new File([new Uint8Array(fileBytes)], fileName, {
-        type: mimeType,
-      });
-      const result = await extractDocument(file);
-      return result;
+      "Get the extracted text content from the student's uploaded dissertation. Call this to read the full document content after the student has uploaded a file.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const text = getExtraction(sessionId);
+      if (!text) {
+        return {
+          error:
+            "No document has been extracted yet. Ask the student to upload their dissertation file first.",
+        };
+      }
+      return { content: text };
     },
   });
 

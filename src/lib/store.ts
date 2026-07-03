@@ -1,5 +1,6 @@
 interface SessionState {
   pdf: Uint8Array | null;
+  extractedText: string | null;
   violations: Array<{
     check_id: string;
     status: string;
@@ -16,12 +17,21 @@ function getOrCreate(sessionId: string): SessionState {
   if (!store.has(sessionId)) {
     store.set(sessionId, {
       pdf: null,
+      extractedText: null,
       violations: [],
       passCount: 0,
       failCount: 0,
     });
   }
   return store.get(sessionId)!;
+}
+
+export function storeExtraction(sessionId: string, text: string) {
+  getOrCreate(sessionId).extractedText = text;
+}
+
+export function getExtraction(sessionId: string): string | null {
+  return store.get(sessionId)?.extractedText ?? null;
 }
 
 export function storePdf(sessionId: string, pdf: Uint8Array) {
@@ -50,6 +60,7 @@ export function getState(
   const state = getOrCreate(sessionId);
   return {
     pdf: state.pdf ? Buffer.from(state.pdf).toString("base64") : null,
+    extractedText: state.extractedText,
     violations: state.violations,
     passCount: state.passCount,
     failCount: state.failCount,
