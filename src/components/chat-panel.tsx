@@ -107,18 +107,29 @@ export function ChatPanel({
         const result = await extractDocument(file);
         const text = result.content.raw_text;
 
-        await fetch("/api/state", {
+        const putRes = await fetch("/api/state", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, text }),
+          body: JSON.stringify({
+            sessionId,
+            extraction: {
+              raw_text: text,
+              headings: result.structure.headings,
+              page_count: result.metadata.page_count,
+              page_count_estimated: result.metadata.page_count_estimated,
+              detected_fonts: result.metadata.detected_fonts,
+            },
+          }),
         });
 
-        const preview =
-          text.length > 8000
-            ? text.slice(0, 8000) + "\n\n[... content truncated, full document available ...]"
-            : text;
+        if (!putRes.ok) {
+          throw new Error(
+            `Failed to store extraction: ${putRes.status} ${putRes.statusText}`
+          );
+        }
+
         sendMessage({
-          text: `I've uploaded my dissertation: ${file.name} (${result.metadata.page_count} pages detected)\n\nExtracted content:\n\n${preview}`,
+          text: `I've uploaded my dissertation: ${file.name} (${result.metadata.page_count} pages${result.metadata.page_count_estimated ? " estimated" : ""} detected)`,
         });
       } catch (err) {
         sendMessage({
@@ -128,7 +139,7 @@ export function ChatPanel({
         setExtracting(false);
       }
     },
-    [sendMessage]
+    [sendMessage, sessionId]
   );
 
   return (

@@ -1,6 +1,52 @@
+import {
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const EXTRACTION_DIR = join(tmpdir(), "format-my-dissertation");
+
+function ensureExtractionDir() {
+  try {
+    if (!existsSync(EXTRACTION_DIR)) {
+      mkdirSync(EXTRACTION_DIR, { recursive: true });
+    }
+  } catch {
+    // swallow — file fallback will just be unavailable
+  }
+}
+
+function extractionPath(sessionId: string) {
+  return join(EXTRACTION_DIR, `${sessionId}.json`);
+}
+
+function writeExtractionFile(sessionId: string, result: StoreExtractResult) {
+  try {
+    ensureExtractionDir();
+    writeFileSync(extractionPath(sessionId), JSON.stringify(result));
+  } catch {
+    // non-fatal: file persistence is best-effort
+  }
+}
+
+function readExtractionFile(
+  sessionId: string
+): StoreExtractResult | null {
+  try {
+    if (!existsSync(extractionPath(sessionId))) return null;
+    const raw = readFileSync(extractionPath(sessionId), "utf-8");
+    return JSON.parse(raw) as StoreExtractResult;
+  } catch {
+    return null;
+  }
+}
+
 interface SessionState {
   pdf: Uint8Array | null;
-  extractedText: string | null;
+  extraction: StoreExtractResult | null;
   violations: Array<{
     check_id: string;
     status: string;
@@ -11,13 +57,21 @@ interface SessionState {
   failCount: number;
 }
 
+export interface StoreExtractResult {
+  raw_text: string;
+  headings: Array<{ text: string; level: number; page_number: number | null }>;
+  page_count: number;
+  page_count_estimated: boolean;
+  detected_fonts: string[];
+}
+
 const store = new Map<string, SessionState>();
 
 function getOrCreate(sessionId: string): SessionState {
   if (!store.has(sessionId)) {
     store.set(sessionId, {
       pdf: null,
-      extractedText: null,
+      extraction: null,
       violations: [],
       passCount: 0,
       failCount: 0,
@@ -26,12 +80,29 @@ function getOrCreate(sessionId: string): SessionState {
   return store.get(sessionId)!;
 }
 
-export function storeExtraction(sessionId: string, text: string) {
-  getOrCreate(sessionId).extractedText = text;
+export function storeExtraction(
+  sessionId: string,
+  result: StoreExtractResult
+) {
+  getOrCreate(sessionId).extraction = result;
+  writeExtractionFile(sessionId, result);
+}
+
+export function getStoredExtraction(
+  sessionId: string
+): StoreExtractResult | null {
+  const memVal = store.get(sessionId)?.extraction ?? null;
+  if (memVal) return memVal;
+  const fileVal = readExtractionFile(sessionId);
+  if (fileVal) {
+    getOrCreate(sessionId).extraction = fileVal;
+    return fileVal;
+  }
+  return null;
 }
 
 export function getExtraction(sessionId: string): string | null {
-  return store.get(sessionId)?.extractedText ?? null;
+  return store.get(sessionId)?.extraction?.raw_text ?? null;
 }
 
 export function storePdf(sessionId: string, pdf: Uint8Array) {
@@ -60,7 +131,7 @@ export function getState(
   const state = getOrCreate(sessionId);
   return {
     pdf: state.pdf ? Buffer.from(state.pdf).toString("base64") : null,
-    extractedText: state.extractedText,
+    extraction: state.extraction,
     violations: state.violations,
     passCount: state.passCount,
     failCount: state.failCount,
