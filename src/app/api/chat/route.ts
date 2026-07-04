@@ -1,5 +1,6 @@
 import {
   streamText,
+  stepCountIs,
   UIMessage,
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -92,6 +93,7 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages),
     system: systemPrompt,
     tools: createTools(sessionId),
+    stopWhen: stepCountIs(10),
   });
 
   return createUIMessageStreamResponse({
