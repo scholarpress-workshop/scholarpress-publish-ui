@@ -171,6 +171,48 @@ export function createTools(sessionId: string) {
     },
   });
 
+  const buildDocumentTool = tool({
+    description:
+      "Build and compile the full Typst document by combining the LLM's structure with text from stored extraction chunks. Use {MARKER} placeholders in typst_structure for body content — the backend fetches the text, escapes special characters, and substitutes before compiling. Short fields (title, author, dates) should be literal strings in typst_structure, not markers.",
+    inputSchema: z.object({
+      typst_structure: z
+        .string()
+        .describe(
+          "The complete Typst assembly code (imports + function calls) with {MARKER} placeholders where body text goes. Short fields should be literal strings."
+        ),
+      section_chunks: z
+        .record(z.array(z.number()))
+        .describe(
+          "Map of marker names to chunk index arrays. e.g. { INTRO: [4,5,6], CV: [100,101] }"
+        ),
+      institutionId: z
+        .string()
+        .describe("The institution ID (e.g. 'iu')"),
+    }),
+    execute: async ({ typst_structure, section_chunks, institutionId }) => {
+      const extraction = getStoredExtraction(sessionId);
+      if (!extraction) {
+        return {
+          error:
+            "No document has been extracted yet. Ask the student to upload their dissertation file first.",
+        };
+      }
+
+      const assembled = assembleDocument(
+        typst_structure,
+        section_chunks,
+        extraction.raw_text
+      );
+
+      const pdfBuffer = await compileTypst(assembled, institutionId);
+      storePdf(sessionId, new Uint8Array(pdfBuffer));
+      return {
+        success: true,
+        pdfSize: new Uint8Array(pdfBuffer).byteLength,
+      };
+    },
+  });
+
   return {
     extract_document: extractDocumentTool,
     get_document_chunks: getDocumentChunksTool,
@@ -178,7 +220,46 @@ export function createTools(sessionId: string) {
     validate_pdf: validatePdfTool,
     get_institution_spec: getInstitutionSpecTool,
     get_template: getTemplateTool,
+    build_document: buildDocumentTool,
   };
+}
+
+function escapeTypstText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/#/g, "\\#")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
+function getChunksFromText(
+  rawText: string,
+  indices: number[],
+  charsPerChunk: number,
+  overlap: number
+): string {
+  const allChunks = chunkDocument(rawText, charsPerChunk, overlap);
+  return indices
+    .filter((i) => i >= 0 && i < allChunks.length)
+    .map((i) => allChunks[i].text)
+    .join("\n\n");
+}
+
+function assembleDocument(
+  typstStructure: string,
+  sectionChunks: Record<string, number[]>,
+  rawText: string
+): string {
+  let result = typstStructure;
+  for (const [marker, indices] of Object.entries(sectionChunks)) {
+    const chunkText = getChunksFromText(rawText, indices, 5000, 500);
+    const escaped = escapeTypstText(chunkText);
+    result = result.replace(
+      new RegExp(`\\{${marker}\\}`, "g"),
+      `[${escaped}]`
+    );
+  }
+  return result;
 }
 
 function chunkDocument(
