@@ -31,9 +31,8 @@ export default function Home() {
         bytes[i] = binary.charCodeAt(i);
       }
       setPdfBytes(bytes);
-      setRightTab("preview");
     }
-    if (data.violations && data.violations.length > 0) {
+    if (data.violations) {
       setViolations(data.violations);
       setPassCount(data.passCount);
       setFailCount(data.failCount);
@@ -42,6 +41,7 @@ export default function Home() {
 
   const handleCompile = useCallback(
     (sid: string) => {
+      setRightTab("preview");
       fetchState(sid);
     },
     [fetchState]

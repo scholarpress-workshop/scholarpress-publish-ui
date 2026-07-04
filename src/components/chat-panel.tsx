@@ -16,12 +16,9 @@ interface ChatPanelProps {
   onValidate: (sessionId: string) => void;
 }
 
-function messagesHavePendingTool(
-  messages: UIMessage[],
-  prevLen: number
-): boolean {
-  for (let i = prevLen; i < messages.length; i++) {
-    for (const part of messages[i].parts) {
+function messagesHavePendingTool(messages: UIMessage[]): boolean {
+  for (const msg of messages) {
+    for (const part of msg.parts) {
       if (
         typeof part.type === "string" &&
         part.type.startsWith("tool-") &&
@@ -39,25 +36,32 @@ function messagesHavePendingTool(
   return false;
 }
 
-function messagesHaveNewToolOutput(
-  messages: UIMessage[],
-  prevLen: number
-): { compile: boolean; validate: boolean } {
-  const result = { compile: false, validate: false };
-  for (let i = prevLen; i < messages.length; i++) {
-    for (const part of messages[i].parts) {
+function collectToolOutputs(messages: UIMessage[]): {
+  compile: string[];
+  validate: string[];
+} {
+  const compile: string[] = [];
+  const validate: string[] = [];
+  for (const msg of messages) {
+    for (const part of msg.parts) {
+      if (typeof part.type !== "string") continue;
+      if (!("state" in part) || part.state !== "output-available") continue;
+      const id =
+        ("toolCallId" in part && typeof part.toolCallId === "string")
+          ? part.toolCallId
+          : `${msg.id}:${part.type}`;
       if (
         part.type === "tool-compile_typst" ||
         part.type === "tool-build_document"
       ) {
-        if (part.state === "output-available") result.compile = true;
+        compile.push(id);
       }
-      if (part.type === "tool-validate_pdf" && "state" in part) {
-        if (part.state === "output-available") result.validate = true;
+      if (part.type === "tool-validate_pdf") {
+        validate.push(id);
       }
     }
   }
-  return result;
+  return { compile, validate };
 }
 
 export function ChatPanel({
@@ -76,24 +80,32 @@ export function ChatPanel({
   const [extracting, setExtracting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const prevMsgLen = useRef(0);
+  const processedToolIds = useRef(new Set<string>());
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    const prev = prevMsgLen.current;
-    const newTools = messagesHaveNewToolOutput(messages, prev);
-    if (newTools.compile) onCompile(sessionId);
-    if (newTools.validate) onValidate(sessionId);
-    prevMsgLen.current = messages.length;
-  }, [messages, onCompile, onValidate]);
+    const outputs = collectToolOutputs(messages);
+    for (const id of outputs.compile) {
+      if (!processedToolIds.current.has(id)) {
+        processedToolIds.current.add(id);
+        onCompile(sessionId);
+      }
+    }
+    for (const id of outputs.validate) {
+      if (!processedToolIds.current.has(id)) {
+        processedToolIds.current.add(id);
+        onValidate(sessionId);
+      }
+    }
+  }, [messages, onCompile, onValidate, sessionId]);
 
   const isLoading =
     status === "streaming" ||
     status === "submitted" ||
-    messagesHavePendingTool(messages, prevMsgLen.current);
+    messagesHavePendingTool(messages);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
