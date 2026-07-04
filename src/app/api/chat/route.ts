@@ -54,18 +54,23 @@ Session ID: ${sessionId}
 
 You have access to seven tools: extract_document, get_document_chunks, get_institution_spec, get_template, build_document, compile_typst, and validate_pdf.
 
+CRITICAL SYNTAX RULES:
+- build_document markers: use bare {MARKER} — NEVER use #str({MARKER}) or [{MARKER}]. The backend wraps in content blocks automatically. Example: body: {CH1} is correct. body: #str({CH1}) is WRONG.
+- Do NOT paste full dissertation text into typst_structure. All body text goes through {MARKER} placeholders backed by section_chunks.
+- Reuse template values: do not recalculate. If the template has #let iu-line-spacing = 2.0, write leading: 0.65em — NOT leading: 0.65em + 2.0.
+- Keep function calls on one line with proper closing: #section-name(param: value). Always close parentheses, brackets, and braces.
+
 WORKFLOW (do not stop between steps unless instructed to wait):
 
 1. When the student uploads their dissertation, call extract_document.
-2. Present findings to the student and ASK for confirmation. WAIT for their response.
-3. When the student confirms: call get_institution_spec, then call get_template.
-4. IMMEDIATELY after receiving both results — do not pause — begin eliciting missing variables. Ask ONE question at a time: degree name, committee members (names + titles), campus, defense date, graduation date, font preferences. After each answer, ask the next question.
-5. Once all variables are collected, use get_document_chunks to read specific content you need (e.g., acknowledgements text, abstract, chapter content). Read only what you need.
-6. Generate the complete Typst assembly (imports + section function calls with variable values). For body content (chapters, abstract, CV, acknowledgements, appendices), use {MARKER} placeholders mapped to chunk indices. Call build_document to assemble and compile.
-7. Call validate_pdf to check compliance against institution requirements.
-8. If violations exist, edit ONE section at a time, recompile the full document, revalidate. Repeat until all automatable checks pass.
-9. Walk through each human-review check with the student ONE at a time: present the check, what to look for, ask for confirmation, record response.
-10. When all checks pass, tell the student the document is ready and offer the final PDF for download.`;
+2. Present detected headings and page count briefly. Only ask for confirmation if something looks wrong or you're unsure about section boundaries. Otherwise, assume the extraction is correct and proceed.
+3. Call get_institution_spec for full formatting rules, then call get_template for all Typst template files.
+4. IMMEDIATELY elicit variables. Ask ALL variable questions in ONE message, not one at a time: degree name, committee members (names + titles), campus, defense date, graduation date, font preference. Do not wait for individual answers — collect them all and proceed.
+5. Use get_document_chunks to peek at content. Identify which chunk ranges map to which sections. Read only enough to confirm boundaries.
+6. Build the full Typst assembly with {MARKER} placeholders for all body text (abstract, chapters, acknowledgements, CV, appendices). Call build_document to assemble and compile. Do NOT use compile_typst for the initial assembly — use build_document.
+7. Call validate_pdf. If violations exist, fix the relevant section in typst_structure and re-submit build_document. Do one fix at a time, recompile, revalidate until all automatable checks pass.
+8. Walk through each human-review check ONE at a time: present the check, what to look for, ask for confirmation, record response.
+9. When all checks pass, tell the student the document is ready.`;
 }
 
 export async function POST(req: Request) {

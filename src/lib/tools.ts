@@ -173,17 +173,17 @@ export function createTools(sessionId: string) {
 
   const buildDocumentTool = tool({
     description:
-      "Build and compile the full Typst document by combining the LLM's structure with text from stored extraction chunks. Use {MARKER} placeholders in typst_structure for body content — the backend fetches the text, escapes special characters, and substitutes before compiling. Short fields (title, author, dates) should be literal strings in typst_structure, not markers.",
+      "Build and compile the full Typst document by combining the LLM's structure with text from stored extraction chunks. Use bare {MARKER} placeholders in typst_structure — do NOT wrap them in #str(), [], or any function call. The backend fetches text, escapes special characters, and wraps in content blocks automatically. Short fields (title, author, dates) should be literal Typst strings, not markers.",
     inputSchema: z.object({
       typst_structure: z
         .string()
         .describe(
-          "The complete Typst assembly code (imports + function calls) with {MARKER} placeholders where body text goes. Short fields should be literal strings."
+          "The complete Typst assembly code (imports + function calls) with bare {MARKER} placeholders where body text goes. Example: body: {ABSTRACT} — NOT body: #str({ABSTRACT}) or body: [{ABSTRACT}]. Short fields should be literal values: title: \"My Title\", author: \"Jane Doe\"."
         ),
       section_chunks: z
         .record(z.array(z.number()))
         .describe(
-          "Map of marker names to chunk index arrays. e.g. { INTRO: [4,5,6], CV: [100,101] }"
+          "Map of marker names to chunk index arrays. e.g. { ABSTRACT: [4,5], CHAPTER_1: [12,13,14,15] }. Only use markers for long body text. Short values (title, author, committee, dates) go directly in typst_structure as literals."
         ),
       institutionId: z
         .string()
@@ -229,7 +229,8 @@ function escapeTypstText(text: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/#/g, "\\#")
     .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
+    .replace(/\]/g, "\\]")
+    .replace(/^(\*)/gm, "\\$1");
 }
 
 function getChunksFromText(
