@@ -90,6 +90,11 @@ export function createTools(sessionId: string) {
         .describe("The institution ID (e.g. 'iu')"),
     }),
     execute: async ({ typstCode, institutionId }) => {
+      const bracketError = validateBrackets(typstCode);
+      if (bracketError) {
+        return { error: bracketError };
+      }
+
       const pdfBuffer = await compileTypst(typstCode, institutionId);
       storePdf(sessionId, new Uint8Array(pdfBuffer));
       return {
@@ -204,6 +209,11 @@ export function createTools(sessionId: string) {
         extraction.raw_text
       );
 
+      const bracketError = validateBrackets(assembled);
+      if (bracketError) {
+        return { error: bracketError };
+      }
+
       const pdfBuffer = await compileTypst(assembled, institutionId);
       storePdf(sessionId, new Uint8Array(pdfBuffer));
       return {
@@ -227,10 +237,45 @@ export function createTools(sessionId: string) {
 function escapeTypstText(text: string): string {
   return text
     .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$")
     .replace(/#/g, "\\#")
     .replace(/\[/g, "\\[")
     .replace(/\]/g, "\\]")
-    .replace(/^(\*)/gm, "\\$1");
+    .replace(/^(\*)/gm, "\\$1")
+    .replace(/^(_)/gm, "\\$1");
+}
+
+function validateBrackets(code: string): string | null {
+  const pairs: Array<[string, string, string]> = [
+    ["(", ")", "parentheses"],
+    ["[", "]", "brackets"],
+    ["{", "}", "braces"],
+  ];
+
+  const errors: string[] = [];
+  const lines = code.split("\n");
+
+  for (const [open, close, name] of pairs) {
+    const stack: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      for (const ch of lines[i]) {
+        if (ch === open) stack.push(i + 1);
+        if (ch === close && stack.length > 0) stack.pop();
+      }
+    }
+    if (stack.length > 0) {
+      const lineNums = [...new Set(stack)].sort((a, b) => a - b);
+      errors.push(
+        `  '${open}${close}' (${name}) unclosed at line${lineNums.length > 1 ? "s" : ""} ${lineNums.join(", ")}`
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    return `Bracket balance check failed — the following delimiters are unclosed:\n${errors.join("\n")}\nFix these and re-submit.`;
+  }
+
+  return null;
 }
 
 function getChunksFromText(
