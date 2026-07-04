@@ -39,17 +39,22 @@ export function createTools(sessionId: string) {
 
   const getDocumentChunksTool = tool({
     description:
-      "Get specific text chunks from the uploaded dissertation. Use this to read a chapter, section, or page range. Request by chunk index after calling extract_document to see how many chunks are available.",
+      "Get specific text chunks from the uploaded dissertation. Use this to read a chapter, section, or page range. Request by chunk index OR by heading name (partial match on heading text). Call extract_document first to see which headings are available and how many chunks exist.",
     inputSchema: z.object({
       start_index: z
         .number()
-        .describe("The first chunk index to retrieve (0-based)"),
+        .optional()
+        .describe("The first chunk index to retrieve (0-based). Use when jumping to a known chunk position."),
+      heading: z
+        .string()
+        .optional()
+        .describe("Find chunks by heading name (partial match, case-insensitive). e.g. 'Chapter 1', 'Acknowledgements', 'References'. The tool finds which chunk starts at that heading and returns chunks from there."),
       count: z
         .number()
         .default(3)
         .describe("How many consecutive chunks to return (default 3, max 5)"),
     }),
-    execute: async ({ start_index, count }) => {
+    execute: async ({ start_index, heading, count }) => {
       const extraction = getStoredExtraction(sessionId);
       if (!extraction) {
         return {
@@ -63,7 +68,59 @@ export function createTools(sessionId: string) {
       const chunks = chunkDocument(extraction.raw_text, charsPerChunk, overlap);
       const clampedCount = Math.min(count, 5);
 
-      const start = Math.max(0, Math.min(start_index, chunks.length - 1));
+      let start: number;
+
+      if (heading) {
+        const matches = extraction.headings.filter(
+          (h) =>
+            h.text.toLowerCase().includes(heading.toLowerCase())
+        );
+        if (matches.length === 0) {
+          return {
+            error: `No heading matching "${heading}" found. Available headings: ${extraction.headings.map((h) => h.text).join(", ")}`,
+          };
+        }
+
+        const match = matches[0];
+        const pos = extraction.raw_text.indexOf(match.text);
+        if (pos === -1) {
+          return {
+            error: `Heading "${match.text}" found in metadata but could not be located in document text.`,
+          };
+        }
+
+        const chunkIdx = chunks.findIndex(
+          (c) => pos >= c.start_char && pos < c.end_char
+        );
+        start = chunkIdx >= 0 ? chunkIdx : 0;
+
+        start = Math.max(0, Math.min(start, chunks.length - 1));
+        const end = Math.min(start + clampedCount, chunks.length);
+
+        return {
+          heading: {
+            text: match.text,
+            level: match.level,
+            page_number: match.page_number,
+          },
+          chunks: chunks.slice(start, end).map((c) => ({
+            index: c.index,
+            text: c.text,
+            char_range: [c.start_char, c.end_char],
+          })),
+          start_index: start,
+          total_chunks: chunks.length,
+          has_more: end < chunks.length,
+        };
+      }
+
+      if (start_index === undefined) {
+        return {
+          error: "Provide either start_index or heading to specify which chunks to retrieve.",
+        };
+      }
+
+      start = Math.max(0, Math.min(start_index, chunks.length - 1));
       const end = Math.min(start + clampedCount, chunks.length);
 
       return {
@@ -285,10 +342,22 @@ function getChunksFromText(
   overlap: number
 ): string {
   const allChunks = chunkDocument(rawText, charsPerChunk, overlap);
-  return indices
+  const valid = [...new Set(indices)]
     .filter((i) => i >= 0 && i < allChunks.length)
-    .map((i) => allChunks[i].text)
-    .join("\n\n");
+    .sort((a, b) => a - b);
+
+  const ranges: Array<[number, number]> = [];
+  for (const idx of valid) {
+    const c = allChunks[idx];
+    const last = ranges[ranges.length - 1];
+    if (last && c.start_char <= last[1]) {
+      last[1] = Math.max(last[1], c.end_char);
+    } else {
+      ranges.push([c.start_char, c.end_char]);
+    }
+  }
+
+  return ranges.map(([start, end]) => rawText.slice(start, end)).join("\n\n");
 }
 
 function assembleDocument(

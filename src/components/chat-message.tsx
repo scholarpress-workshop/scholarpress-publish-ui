@@ -38,12 +38,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
               raw.state === "input-streaming" ||
               raw.state === "streaming" ||
               raw.state === "input-available";
+            const isError = raw.state === "output-error";
             return (
               <div key={i} className="mt-1 text-xs text-muted-foreground">
                 <code>
                   {isRunning
                     ? `Running ${toolName}...`
-                    : `${toolName} completed`}
+                    : isError
+                      ? `${toolName} failed`
+                      : `${toolName} completed`}
                 </code>
               </div>
             );

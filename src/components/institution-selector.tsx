@@ -6,7 +6,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { InstitutionSummary } from "@/lib/api";
 
@@ -58,7 +57,9 @@ export function InstitutionSelector({
       }}
     >
       <SelectTrigger className="w-64">
-        <SelectValue placeholder="Select institution..." />
+        <span className="flex-1 text-left text-sm">
+          {selected ? (selected.ui_config?.name ?? selected.name) : "Select institution..."}
+        </span>
       </SelectTrigger>
       <SelectContent>
         {institutions.map((inst) => (
