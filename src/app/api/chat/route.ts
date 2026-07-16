@@ -82,12 +82,17 @@ export async function POST(req: Request) {
     messages,
     institutionId,
     sessionId,
-  }: { messages: UIMessage[]; institutionId: string; sessionId: string } =
-    await req.json();
+    llmApiKey,
+  }: {
+    messages: UIMessage[];
+    institutionId: string;
+    sessionId: string;
+    llmApiKey?: string;
+  } = await req.json();
 
   const baseURL = process.env.LLM_BASE_URL ?? DEFAULT_BASE_URL;
   const model = process.env.LLM_MODEL ?? DEFAULT_MODEL;
-  const apiKey = process.env.LLM_API_KEY ?? "";
+  const apiKey = llmApiKey || process.env.LLM_API_KEY || "";
 
   const provider = createOpenAICompatible({
     name: "llm",

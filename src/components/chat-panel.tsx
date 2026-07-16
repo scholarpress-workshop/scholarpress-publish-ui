@@ -8,6 +8,7 @@ import { ChatMessage } from "./chat-message";
 import { FileUpload } from "./file-upload";
 import { Button } from "@/components/ui/button";
 import { extractDocument } from "@/lib/api";
+import { getStoredApiKey } from "./api-key-settings";
 
 interface ChatPanelProps {
   institutionId: string;
@@ -72,7 +73,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
-      body: { institutionId, sessionId },
+      body: { institutionId, sessionId, llmApiKey: getStoredApiKey() },
     }),
   });
 
