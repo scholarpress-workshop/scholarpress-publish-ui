@@ -14,16 +14,9 @@ export async function fetchInstitutions(): Promise<InstitutionSummary[]> {
 }
 
 export interface ExtractResult {
-  content: {
-    pages: Array<{ number: number; text: string }>;
-    raw_text: string;
-  };
-  structure: {
-    headings: Array<{ text: string; level: number; page_number: number | null }>;
-    front_matter: Array<{ id: string; title: string | null; page_start: number }>;
-    body: Array<{ id: string; title: string | null; page_start: number }>;
-    end_matter: Array<{ id: string; title: string | null; page_start: number }>;
-  };
+  raw_text: string;
+  pages: Array<{ page_number: number; text: string; width: number; height: number }>;
+  headings: Array<{ text: string; level: number; page_number: number }>;
   metadata: {
     title: string | null;
     author: string | null;

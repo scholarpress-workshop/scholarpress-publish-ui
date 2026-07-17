@@ -127,7 +127,7 @@ export function ChatPanel({
       setExtracting(true);
       try {
         const result = await extractDocument(file);
-        const text = result.content.raw_text;
+        const text = result.raw_text;
 
         const putRes = await fetch("/api/state", {
           method: "PUT",
@@ -136,7 +136,7 @@ export function ChatPanel({
             sessionId,
             extraction: {
               raw_text: text,
-              headings: result.structure.headings,
+              headings: result.headings,
               page_count: result.metadata.page_count,
               page_count_estimated: result.metadata.page_count_estimated,
               detected_fonts: result.metadata.detected_fonts,
