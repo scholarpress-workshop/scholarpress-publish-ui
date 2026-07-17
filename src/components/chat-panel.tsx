@@ -154,8 +154,9 @@ export function ChatPanel({
           text: `I've uploaded my dissertation: ${file.name} (${result.metadata.page_count} pages${result.metadata.page_count_estimated ? " estimated" : ""} detected)`,
         });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         sendMessage({
-          text: `I tried to upload ${file.name} (${file.type}) but there was an error extracting it.`,
+          text: `I tried to upload ${file.name} (${file.type}) but there was an error extracting it: ${msg}`,
         });
       } finally {
         setExtracting(false);
