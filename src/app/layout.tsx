@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "Format My Dissertation",
+  title: "Scholarpress Publish",
   description: "AI-powered dissertation formatting assistant",
 };
 
