@@ -7,7 +7,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ValidationResults } from "@/components/validation-results";
 import { PdfPreview } from "@/components/pdf-preview";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ApiKeySettings } from "@/components/api-key-settings";
+import { LlmSettings } from "@/components/llm-settings";
 
 export default function Home() {
   const [institution, setInstitution] = useState<InstitutionSummary | null>(
@@ -73,11 +73,11 @@ export default function Home() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 border-b px-6 py-3">
-        <h1 className="text-lg font-semibold">Format My Dissertation</h1>
+        <h1 className="text-lg font-semibold">Scholarpress Publish</h1>
         <div className="flex-1" />
         <div className="relative flex items-center gap-1">
           <ThemeToggle />
-          <ApiKeySettings />
+          <LlmSettings />
         </div>
         <InstitutionSelector
           onSelect={handleInstitutionSelect}

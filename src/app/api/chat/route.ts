@@ -11,7 +11,7 @@ import { createTools } from "@/lib/tools";
 import { fetchInstitutionSpec, fetchTemplate } from "@/lib/api";
 
 const DEFAULT_BASE_URL = "https://reallms.rescloud.iu.edu/direct/v1";
-const DEFAULT_MODEL = "gemma-4-31B-it";
+const DEFAULT_MODEL = "glm-5.2";
 
 async function buildSystemPrompt(
   institutionId: string,
@@ -83,15 +83,19 @@ export async function POST(req: Request) {
     institutionId,
     sessionId,
     llmApiKey,
+    llmModel,
+    llmBaseUrl,
   }: {
     messages: UIMessage[];
     institutionId: string;
     sessionId: string;
     llmApiKey?: string;
+    llmModel?: string;
+    llmBaseUrl?: string;
   } = await req.json();
 
-  const baseURL = process.env.LLM_BASE_URL ?? DEFAULT_BASE_URL;
-  const model = process.env.LLM_MODEL ?? DEFAULT_MODEL;
+  const baseURL = llmBaseUrl || process.env.LLM_BASE_URL || DEFAULT_BASE_URL;
+  const model = llmModel || process.env.LLM_MODEL || DEFAULT_MODEL;
   const apiKey = llmApiKey || process.env.LLM_API_KEY || "";
 
   const provider = createOpenAICompatible({
