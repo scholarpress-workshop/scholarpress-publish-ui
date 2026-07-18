@@ -75,19 +75,39 @@ function assembleDocument(
   sectionStarts: Record<string, number>,
   rawText: string
 ): string {
-  const sorted = Object.entries(sectionStarts).sort((a, b) => a[1] - b[1]);
+  // Stable sort by position, then by marker name
+  const sorted = Object.entries(sectionStarts).sort((a, b) => {
+    const pd = a[1] - b[1];
+    return pd !== 0 ? pd : a[0].localeCompare(b[0]);
+  });
 
   let result = typstStructure;
   for (let i = 0; i < sorted.length; i++) {
     const [marker, pos] = sorted[i];
-    const nextPos = i + 1 < sorted.length ? sorted[i + 1][1] : rawText.length;
-    const text = rawText.slice(pos, nextPos);
+    // Clamp position to [0, rawText.length] to guard against bad inputs
+    const safePos = Math.min(Math.max(0, pos), rawText.length);
+    // First section captures all preceding text (title page, etc.)
+    const startPos = i === 0 ? 0 : safePos;
+    const nextPos = i + 1 < sorted.length
+      ? Math.min(Math.max(0, sorted[i + 1][1]), rawText.length)
+      : rawText.length;
+    const text = rawText.slice(startPos, nextPos);
+    if (text.length === 0) continue;
     const escaped = escapeTypstText(text);
+    // Replacer function prevents $&/$$ pattern injection
     result = result.replace(
       new RegExp(`\\{${marker}\\}`, "g"),
-      `[${escaped}]`
+      () => `[${escaped}]`
     );
   }
+
+  // Warn about orphaned section starts not present in typst_structure
+  for (const [marker] of sorted) {
+    if (!typstStructure.includes(`{${marker}}`)) {
+      console.warn(`[assembleDocument] orphaned section: ${marker} (no marker in template)`);
+    }
+  }
+
   return result;
 }
 ```
@@ -156,6 +176,59 @@ The pruning logic in `prune-messages.ts` tombstones only `get_document_chunks` r
 | First section includes pre-heading text (title page, blank lines) | Covered by the LLM's front matter inference in Phase A. The builder will include `raw_text[0..first_heading]` if a marker exists for the front matter section, or skip it if no marker is recorded. |
 | Last section content overflow | The last section extends to `raw_text.length` — all remaining text is included. Sections are always recorded in document order, so the last recorded section gets everything from its heading to EOF. |
 | Missing sections leave gaps | If the agent skips a section, the gap text falls into the previous recorded section (since positions are sorted). The user sees this during Phase B verification and can flag it. |
+| Orphaned markers (section stored but not in typst_structure) | `console.warn` logged; text is silently dropped from output rather than corrupting the document. |
+| Implementation ordering breaks compilation | `store.ts` and `tools.ts` type changes must be committed atomically (same commit). System prompt update committed alongside or after tool schema changes — never before. |
+
+## Second Peer Review Corrections
+
+### 1. Pre-first-section text capture
+
+The first section's `pos` may not be 0. Override it explicitly:
+
+```typescript
+const startPos = i === 0 ? 0 : safePos;
+```
+
+### 2. Out-of-bounds position clamp
+
+Guard against NaN, negative, or oversized positions:
+
+```typescript
+const safePos = Math.min(Math.max(0, pos), rawText.length);
+```
+
+### 3. Stable sort for identical positions
+
+Two sections at the same position (duplicate headings) could produce unstable ordering. Sort by position, then marker name:
+
+```typescript
+const sorted = Object.entries(starts).sort((a, b) => {
+  const pd = a[1] - b[1];
+  return pd !== 0 ? pd : a[0].localeCompare(b[0]);
+});
+```
+
+### 4. Orphaned section warning
+
+If a section start is recorded but no `{MARKER}` exists in `typst_structure`, the text would be silently dropped. Add a warning to catch this:
+
+```typescript
+for (const [marker] of sorted) {
+  if (!typstStructure.includes(`{${marker}}`)) {
+    console.warn(`orphaned section: ${marker}`);
+  }
+}
+```
+
+### 5. Additional tests from second review
+
+| Test | Description |
+|------|-------------|
+| Pre-first-section text preserved | First section at pos 150 → output includes `raw_text[0..150]` |
+| NaN/negative/beyond-length position | All clamped to safe range |
+| Identical positions → stable ordering | Two markers at same position sorted by name |
+| Orphaned section logged | Section start stored but not in typst_structure → warn, no output corruption |
+
 
 ## Peer Review Corrections
 
