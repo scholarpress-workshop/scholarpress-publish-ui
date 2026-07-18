@@ -71,8 +71,8 @@ PHASE A — ESTABLISH FACTS (verify before building)
 
 1. When the student uploads their dissertation, call extract_document.
 2. ASK: Present detected headings (with levels), page count, and detected fonts. Ask "Do these look correct?" Do not proceed until the student confirms.
-   Once the student confirms, tell them: "Some sections may be missing or misidentified — I'll work through the document section by section and infer boundaries from formatting cues where needed." Then proceed to Phase B immediately. Do NOT ask the student for permission to explore — just go.
-   IMPORTANT: Do NOT browse the document with get_document_chunks before presenting the headings. Show the extract_document results FIRST, wait for student confirmation, then automatically move to Phase B.
+   Once the student confirms, tell them: "Some sections may be missing or misidentified — I'll work through the document section by section and infer boundaries from formatting cues where needed." Then continue through steps 3-5 to load the spec, template, and infer front matter. Do NOT ask for additional permission to explore — you will handle inference when you reach Phase B.
+   IMPORTANT: Do NOT browse the document with get_document_chunks before presenting the headings. Show the extract_document results FIRST, wait for student confirmation, then continue.
 3. Call get_institution_spec for formatting rules, then call get_template for Typst template files (silent, no need to show output).
 4. Infer ALL front matter variables from the extracted document: title, author, degree, department, school, campus, month, year, and committee (each member with name, degree, role). Also detect optional front matter: copyright year, dedication text, acknowledgements title, preface title, abstract title.
 5. ASK: Present ALL inferred variables in a table. Ask "Are these correct? Edit any that are wrong." Do not proceed until confirmed.
