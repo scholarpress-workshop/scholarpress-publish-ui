@@ -75,37 +75,41 @@ function assembleDocument(
   sectionStarts: Record<string, number>,
   rawText: string
 ): string {
-  // Stable sort by position, then by marker name
-  const sorted = Object.entries(sectionStarts).sort((a, b) => {
+  // 1. Filter orphans and invalid positions BEFORE sorting
+  const validSections: Array<[string, number]> = [];
+  for (const [marker, pos] of Object.entries(sectionStarts)) {
+    if (!typstStructure.includes(`{${marker}}`)) {
+      console.warn(`[assembleDocument] orphaned section: ${marker} (no marker in template)`);
+      continue; // skip sorting — prevents text-stealing from adjacent sections
+    }
+    const parsedPos = Number(pos);
+    if (isNaN(parsedPos) || parsedPos < 0) {
+      continue; // skip invalid positions
+    }
+    const safePos = Math.min(parsedPos, rawText.length);
+    validSections.push([marker, safePos]);
+  }
+
+  // 2. Stable sort by position, then marker name
+  validSections.sort((a, b) => {
     const pd = a[1] - b[1];
     return pd !== 0 ? pd : a[0].localeCompare(b[0]);
   });
 
   let result = typstStructure;
-  for (let i = 0; i < sorted.length; i++) {
-    const [marker, pos] = sorted[i];
-    // Clamp position to [0, rawText.length] to guard against bad inputs
-    const safePos = Math.min(Math.max(0, pos), rawText.length);
+
+  // 3. Slice and substitute — split/join avoids regex injection from marker names
+  for (let i = 0; i < validSections.length; i++) {
+    const [marker, pos] = validSections[i];
     // First section captures all preceding text (title page, etc.)
-    const startPos = i === 0 ? 0 : safePos;
-    const nextPos = i + 1 < sorted.length
-      ? Math.min(Math.max(0, sorted[i + 1][1]), rawText.length)
+    const startPos = i === 0 ? 0 : pos;
+    const nextPos = i + 1 < validSections.length
+      ? validSections[i + 1][1]
       : rawText.length;
     const text = rawText.slice(startPos, nextPos);
-    if (text.length === 0) continue;
     const escaped = escapeTypstText(text);
-    // Replacer function prevents $&/$$ pattern injection
-    result = result.replace(
-      new RegExp(`\\{${marker}\\}`, "g"),
-      () => `[${escaped}]`
-    );
-  }
-
-  // Warn about orphaned section starts not present in typst_structure
-  for (const [marker] of sorted) {
-    if (!typstStructure.includes(`{${marker}}`)) {
-      console.warn(`[assembleDocument] orphaned section: ${marker} (no marker in template)`);
-    }
+    // split/join avoids regex injection from marker names containing $, +, etc.
+    result = result.split(`{${marker}}`).join(`[${escaped}]`);
   }
 
   return result;
@@ -273,4 +277,32 @@ Text before `sorted[0][1]` (position of first recorded section) is discarded unl
 | Missing intermediate section | Verify gap text is appended to preceding section, not silently dropped |
 | `char_start` of `-1` rejected | Tool returns error, not corrupted position |
 | All sections recorded, verify contiguous output | End-to-end positional slicing produces complete document |
+
+## Third Peer Review Corrections
+
+### 1. Orphaned sections steal adjacent text (Critical)
+
+Previous code sorted ALL sections, then warned about orphans *after* replacement. This meant orphaned sections still participated in position-sorting boundaries, causing adjacent sections to lose text. Fix: filter orphans **before** sorting so they don't affect position calculations.
+
+### 2. `split().join()` instead of regex
+
+Markers with regex-sensitive characters (`$`, `+`, `?`) would cause `new RegExp(...)` to throw or produce unexpected matches. Use `result.split(`{${marker}}`).join(...)` which performs literal string replacement and is immune to regex injection.
+
+### 3. Zero-length slices no longer skipped
+
+Removed the `if (text.length === 0) continue;` guard. Empty sections must still replace `{MARKER}` with `[]` (empty content block) to prevent template placeholder leaks.
+
+### 4. NaN/negative positions filtered before sort
+
+`Number(pos)` validation ensures non-finite values are skipped, preventing `NaN` from propagating into the sort comparator.
+
+### 5. Updated test coverage
+
+| Test | Description |
+|------|-------------|
+| Orphaned section does not steal text | Section A recorded but not in template → Section B gets correct text range |
+| Empty section produces `[]` in output | Zero-length slice → marker replaced with empty content block, not left as raw `{MARKER}` |
+| Marker with `$` character | `{CH_$1}` marker → no regex error, correct substitution |
+| NaN position skipped | NaN `char_start` → section excluded from output, no crash |
+
 
