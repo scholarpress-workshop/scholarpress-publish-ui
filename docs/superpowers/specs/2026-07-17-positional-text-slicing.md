@@ -156,3 +156,48 @@ The pruning logic in `prune-messages.ts` tombstones only `get_document_chunks` r
 | First section includes pre-heading text (title page, blank lines) | Covered by the LLM's front matter inference in Phase A. The builder will include `raw_text[0..first_heading]` if a marker exists for the front matter section, or skip it if no marker is recorded. |
 | Last section content overflow | The last section extends to `raw_text.length` — all remaining text is included. Sections are always recorded in document order, so the last recorded section gets everything from its heading to EOF. |
 | Missing sections leave gaps | If the agent skips a section, the gap text falls into the previous recorded section (since positions are sorted). The user sees this during Phase B verification and can flag it. |
+
+## Peer Review Corrections
+
+### 1. Immutable string bug
+
+`result.replace(...)` returns a new string, does not mutate. Fix:
+
+```typescript
+result = result.replace(regex, () => `[${escaped}]`);
+```
+
+### 2. JavaScript replace pattern injection
+
+`$&`, `$'`, `$$` etc. in the replacement string are interpreted as special patterns, corrupting text containing currency symbols or backreference-like sequences. Use a replacer function:
+
+```typescript
+result = result.replace(`{${marker}}`, () => `[${escapeTypstText(text)}]`);
+```
+
+### 3. Negative position from failed indexOf
+
+If `indexOf(match.text)` returns `-1` (heading not found in raw text), storing that as `char_start` produces `rawText.slice(-1, ...)` which slices from the end. Validate:
+
+```typescript
+// In get_document_chunks execute():
+const pos = extraction.raw_text.indexOf(match.text);
+if (pos === -1) {
+  return { error: "Heading not found in document text." };
+}
+// heading.char_start = pos;  // guaranteed >= 0
+```
+
+### 4. Pre-first-section text
+
+Text before `sorted[0][1]` (position of first recorded section) is discarded unless explicitly handled. If the agent records a front-matter section at position 0 (which it should for title/acceptance pages), this is covered. If no section starts at position 0, the first section's range is implicitly `[0..next_pos]`, capturing everything.
+
+### 5. Additional tests
+
+| Test | Description |
+|------|-------------|
+| `assembleDocument` with `$` and `$$` in text | Verify no pattern injection — output contains literal `$` |
+| Missing intermediate section | Verify gap text is appended to preceding section, not silently dropped |
+| `char_start` of `-1` rejected | Tool returns error, not corrupted position |
+| All sections recorded, verify contiguous output | End-to-end positional slicing produces complete document |
+
