@@ -81,7 +81,7 @@ export async function validatePdf(
 ): Promise<ValidationResult> {
   const base64 = Buffer.from(pdfBytes).toString("base64");
   console.error("[validatePdf] sending request", { pdfBytesLen: pdfBytes.byteLength, base64Len: base64.length });
-  const res = await fetch(`${RUST_SERVICE_URL}/validate`, {
+  const res = await fetch(`${RUST_SERVICE_URL}/check`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
