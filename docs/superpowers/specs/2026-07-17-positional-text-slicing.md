@@ -98,22 +98,22 @@ function assembleDocument(
 
   let result = typstStructure;
 
-  // 3. Slice and substitute — split/join avoids regex injection from marker names
+  // 3. Clean up unmatched placeholders FIRST — on the template skeleton,
+  //    not on substituted content (avoids matching user text after substitution)
+  const validMarkers = new Set(validSections.map((s) => s[0]));
+  result = result.replace(/\{([A-Z0-9_]+)\}/g, (_match, name) =>
+    validMarkers.has(name) ? _match : "[]"
+  );
+
+  // 4. Slice and substitute
   for (let i = 0; i < validSections.length; i++) {
     const [marker, pos] = validSections[i];
-    // First section captures all preceding text (title page, etc.)
     const startPos = i === 0 ? 0 : pos;
-    const nextPos = i + 1 < validSections.length
-      ? validSections[i + 1][1]
-      : rawText.length;
+    const nextPos = i + 1 < validSections.length ? validSections[i + 1][1] : rawText.length;
     const text = rawText.slice(startPos, nextPos);
     const escaped = escapeTypstText(text);
-    // split/join avoids regex injection from marker names containing $, +, etc.
     result = result.split(`{${marker}}`).join(`[${escaped}]`);
   }
-
-  // 4. Clean up any orphaned markers not recorded in any section
-  result = result.replace(/\{[A-Z0-9_]+\}/g, "[]");
 
   return result;
 }
@@ -319,6 +319,24 @@ result = result.replace(/\{[A-Z0-9_]+\}/g, "[]");
 ```
 
 This replaces any remaining `{UPPERCASE_OR_NUMBER}` markers with an empty Typst content block `[]`.
+
+## Fifth Peer Review Correction
+
+### Cleanup regex matching user content
+
+The regex `\{[A-Z0-9_]+\}` at the end of the function would match placeholder-looking text inside already-substituted document content (e.g., `[some text with {X_1} notation]`), potentially erasing valid user text. Fix: run the cleanup **before** the substitution loop, on the template skeleton only. Use a `Set` of valid marker names to determine which placeholders to keep vs. replace:
+
+```typescript
+const validMarkers = new Set(validSections.map(s => s[0]));
+result = result.replace(/\{([A-Z0-9_]+)\}/g, (_match, name) =>
+  validMarkers.has(name) ? _match : "[]"
+);
+```
+
+This ensures:
+- Markers with matching sections (`{CH1}`, `{DEDICATION}`) are left in place for the subsequent `split().join()` substitution
+- Markers without matching sections (`{MISSING}`) are replaced with `[]` on the template skeleton
+- Already-substituted document content (inside `[...]`) is never scanned by this regex
 
 
 
