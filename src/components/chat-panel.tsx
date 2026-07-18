@@ -86,11 +86,18 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [extracting, setExtracting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const processedToolIds = useRef(new Set<string>());
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollRef.current;
+    if (!container) return;
+    const nearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    if (nearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -167,7 +174,7 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <p className="text-sm">
@@ -195,7 +202,7 @@ export function ChatPanel({
         <div ref={bottomRef} />
       </div>
       <div className="border-t p-4">
-        <FileUpload onFileSelected={handleFileSelected} disabled={isLoading} />
+        <FileUpload onFileSelected={handleFileSelected} />
         <form onSubmit={handleSubmit} className="mt-3">
           <div className="flex gap-2">
             <textarea
@@ -205,7 +212,6 @@ export function ChatPanel({
               placeholder="Type your message..."
               className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               rows={2}
-              disabled={isLoading}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
