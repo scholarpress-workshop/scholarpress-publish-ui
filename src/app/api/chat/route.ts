@@ -52,7 +52,7 @@ Entry point: template.typ
 
 Session ID: ${sessionId}
 
-You have access to seven tools: extract_document, get_document_chunks, get_institution_spec, get_template, build_document, compile_typst, and validate_pdf.
+You have access to eight tools: extract_document, get_document_chunks, get_institution_spec, get_template, build_document, compile_typst, validate_pdf, and record_section_chunks.
 
 get_document_chunks supports two lookup modes:
 - By heading name: heading: "Chapter 1" — jumps to the chunk where that heading starts (case-insensitive partial match)
@@ -92,6 +92,8 @@ For EACH section:
   d. Move to the next section. Do NOT move on until the student confirms.
 
 IMPORTANT for chapters: Even though all chapters use the same template file (sections/chapters.typ), verify EACH chapter individually. A 5-chapter dissertation gets 5 separate verification turns — one per chapter. Mark first: true only on Chapter 1.
+
+After the user confirms a section is correct, call record_section_chunks immediately with the marker name and confirmed chunk indices.
 
 Do NOT build the document until ALL sections are verified.
 
@@ -143,9 +145,44 @@ export async function POST(req: Request) {
 
   const systemPrompt = await buildSystemPrompt(institutionId, sessionId);
 
+  const coreMessages = await convertToModelMessages(messages);
+
+  const lastCommitIndex = coreMessages.findLastIndex(
+    (msg) =>
+      msg.role === "tool" &&
+      Array.isArray(msg.content) &&
+      msg.content.some(
+        (part) =>
+          part.type === "tool-result" &&
+          part.toolName === "record_section_chunks"
+      )
+  );
+
+  if (lastCommitIndex !== -1) {
+    for (let i = 0; i < lastCommitIndex; i++) {
+      const msg = coreMessages[i];
+      if (msg.role === "tool" && Array.isArray(msg.content)) {
+        const cleaned = msg.content.map((part) => {
+          if (
+            part.type === "tool-result" &&
+            part.toolName === "get_document_chunks"
+          ) {
+            return {
+              ...part,
+              result:
+                "[Section text stored in server memory — use record_section_chunks marker indices]",
+            };
+          }
+          return part;
+        });
+        coreMessages[i] = { ...msg, content: cleaned } as typeof msg;
+      }
+    }
+  }
+
   const result = streamText({
     model: provider(model),
-    messages: await convertToModelMessages(messages),
+    messages: coreMessages,
     system: systemPrompt,
     tools: createTools(sessionId),
     stopWhen: stepCountIs(10),

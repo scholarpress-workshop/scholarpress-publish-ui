@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { compileTypst, validatePdf } from "./api";
-import { storePdf, storeViolations, getPdf, getStoredExtraction } from "./store";
+import { storePdf, storeViolations, getPdf, getStoredExtraction, storeSectionChunks, getStoredSectionChunks } from "./store";
 
 export function createTools(sessionId: string) {
   const extractDocumentTool = tool({
@@ -249,8 +249,9 @@ export function createTools(sessionId: string) {
         ),
       section_chunks: z
         .record(z.array(z.number()))
+        .optional()
         .describe(
-          "Map of marker names to chunk index arrays. e.g. { ABSTRACT: [4,5], CHAPTER_1: [12,13,14,15] }. Only use markers for long body text. Short values (title, author, committee, dates) go directly in typst_structure as literals."
+          "Optional. If omitted, uses previously recorded section_chunks from record_section_chunks calls."
         ),
       institutionId: z
         .string()
@@ -265,9 +266,11 @@ export function createTools(sessionId: string) {
         };
       }
 
+      const chunks = section_chunks ?? getStoredSectionChunks(sessionId);
+
       const assembled = assembleDocument(
         typst_structure,
-        section_chunks,
+        chunks,
         extraction.raw_text
       );
 
@@ -285,6 +288,23 @@ export function createTools(sessionId: string) {
     },
   });
 
+  const recordSectionChunksTool = tool({
+    description:
+      "Commit chunk indices for a section after user confirms. Stores server-side so build_document can read them without you tracking them in context.",
+    inputSchema: z.object({
+      marker: z
+        .string()
+        .describe("The {MARKER} name, e.g. 'CH1', 'ABSTRACT'"),
+      indices: z
+        .array(z.number())
+        .describe("Confirmed chunk indices for this section"),
+    }),
+    execute: async ({ marker, indices }) => {
+      storeSectionChunks(sessionId, marker, indices);
+      return { ok: true, marker };
+    },
+  });
+
   return {
     extract_document: extractDocumentTool,
     get_document_chunks: getDocumentChunksTool,
@@ -293,6 +313,7 @@ export function createTools(sessionId: string) {
     get_institution_spec: getInstitutionSpecTool,
     get_template: getTemplateTool,
     build_document: buildDocumentTool,
+    record_section_chunks: recordSectionChunksTool,
   };
 }
 
