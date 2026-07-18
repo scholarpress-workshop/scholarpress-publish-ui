@@ -9,6 +9,7 @@ import {
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createTools } from "@/lib/tools";
 import { fetchInstitutionSpec, fetchTemplate } from "@/lib/api";
+import { pruneOldChunkResults } from "@/lib/prune-messages";
 
 const DEFAULT_BASE_URL = "https://reallms.rescloud.iu.edu/direct/v1";
 const DEFAULT_MODEL = "glm-5.2";
@@ -145,40 +146,9 @@ export async function POST(req: Request) {
 
   const systemPrompt = await buildSystemPrompt(institutionId, sessionId);
 
-  const coreMessages = await convertToModelMessages(messages);
-
-  const lastCommitIndex = coreMessages.findLastIndex(
-    (msg) =>
-      msg.role === "tool" &&
-      Array.isArray(msg.content) &&
-      msg.content.some(
-        (part) =>
-          part.type === "tool-result" &&
-          part.toolName === "record_section_chunks"
-      )
+  const coreMessages = pruneOldChunkResults(
+    await convertToModelMessages(messages)
   );
-
-  if (lastCommitIndex !== -1) {
-    for (let i = 0; i < lastCommitIndex; i++) {
-      const msg = coreMessages[i];
-      if (msg.role === "tool" && Array.isArray(msg.content)) {
-        const cleaned = msg.content.map((part) => {
-          if (
-            part.type === "tool-result" &&
-            part.toolName === "get_document_chunks"
-          ) {
-            return {
-              ...part,
-              result:
-                "[Section text stored in server memory — use record_section_chunks marker indices]",
-            };
-          }
-          return part;
-        });
-        coreMessages[i] = { ...msg, content: cleaned } as typeof msg;
-      }
-    }
-  }
 
   const result = streamText({
     model: provider(model),
