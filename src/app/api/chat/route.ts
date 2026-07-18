@@ -98,7 +98,7 @@ For EACH section:
 
 IMPORTANT for chapters: Even though all chapters use the same template file (sections/chapters.typ), verify EACH chapter individually. A 5-chapter dissertation gets 5 separate verification turns — one per chapter. Mark first: true only on Chapter 1.
 
-After the user confirms a section is correct, call record_section_chunks immediately with the marker name and confirmed chunk indices.
+After the user confirms a section is correct, call record_section_chunks immediately with the marker name and the char_start value from the get_document_chunks heading result.
 
 Do NOT build the document until ALL sections are verified.
 

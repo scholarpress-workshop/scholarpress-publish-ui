@@ -1,43 +1,38 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import {
-  storeSectionChunks,
-  getStoredSectionChunks,
+  storeSectionStart,
+  getStoredSectionStarts,
 } from "../store";
 
-describe("storeSectionChunks / getStoredSectionChunks", () => {
+describe("storeSectionStart / getStoredSectionStarts", () => {
   it("stores and retrieves a single marker", () => {
-    storeSectionChunks("s1", "CH1", [1, 2, 3]);
-    expect(getStoredSectionChunks("s1")).toEqual({ CH1: [1, 2, 3] });
+    storeSectionStart("s1", "CH1", 1500);
+    expect(getStoredSectionStarts("s1")).toEqual({ CH1: 1500 });
   });
 
   it("accumulates multiple markers", () => {
-    storeSectionChunks("s2", "CH1", [1, 2]);
-    storeSectionChunks("s2", "ABSTRACT", [4, 5]);
-    expect(getStoredSectionChunks("s2")).toEqual({
-      CH1: [1, 2],
-      ABSTRACT: [4, 5],
+    storeSectionStart("s2", "CH1", 1500);
+    storeSectionStart("s2", "ABSTRACT", 800);
+    expect(getStoredSectionStarts("s2")).toEqual({
+      CH1: 1500,
+      ABSTRACT: 800,
     });
   });
 
   it("returns empty object for unknown session", () => {
-    expect(getStoredSectionChunks("nonexistent")).toEqual({});
+    expect(getStoredSectionStarts("nonexistent")).toEqual({});
   });
 
   it("overwrites marker on second call", () => {
-    storeSectionChunks("s3", "CH1", [1, 2]);
-    storeSectionChunks("s3", "CH1", [3, 4]);
-    expect(getStoredSectionChunks("s3")).toEqual({ CH1: [3, 4] });
+    storeSectionStart("s3", "CH1", 1500);
+    storeSectionStart("s3", "CH1", 1600);
+    expect(getStoredSectionStarts("s3")).toEqual({ CH1: 1600 });
   });
 
   it("does not collide across sessions", () => {
-    storeSectionChunks("sa", "CH1", [1]);
-    storeSectionChunks("sb", "CH1", [2]);
-    expect(getStoredSectionChunks("sa")).toEqual({ CH1: [1] });
-    expect(getStoredSectionChunks("sb")).toEqual({ CH1: [2] });
-  });
-
-  it("handles empty indices array", () => {
-    storeSectionChunks("s4", "PREFACE", []);
-    expect(getStoredSectionChunks("s4")).toEqual({ PREFACE: [] });
+    storeSectionStart("sa", "CH1", 1500);
+    storeSectionStart("sb", "CH1", 3000);
+    expect(getStoredSectionStarts("sa")).toEqual({ CH1: 1500 });
+    expect(getStoredSectionStarts("sb")).toEqual({ CH1: 3000 });
   });
 });

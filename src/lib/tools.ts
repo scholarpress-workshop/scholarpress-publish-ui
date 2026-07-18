@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { compileTypst, validatePdf } from "./api";
-import { storePdf, storeViolations, getPdf, getStoredExtraction, storeSectionChunks, getStoredSectionChunks } from "./store";
+import { storePdf, storeViolations, getPdf, getStoredExtraction, storeSectionStart, getStoredSectionStarts } from "./store";
 
 export function createTools(sessionId: string) {
   const extractDocumentTool = tool({
@@ -102,6 +102,7 @@ export function createTools(sessionId: string) {
             text: match.text,
             level: match.level,
             page_number: match.page_number,
+            char_start: pos,
           },
           chunks: chunks.slice(start, end).map((c) => ({
             index: c.index,
@@ -247,17 +248,17 @@ export function createTools(sessionId: string) {
         .describe(
           "The complete Typst assembly code (imports + function calls) with bare {MARKER} placeholders where body text goes. Example: body: {ABSTRACT} — NOT body: #str({ABSTRACT}) or body: [{ABSTRACT}]. Short fields should be literal values: title: \"My Title\", author: \"Jane Doe\"."
         ),
-      section_chunks: z
-        .record(z.array(z.number()))
+      section_starts: z
+        .record(z.number())
         .optional()
         .describe(
-          "Optional. If omitted, uses previously recorded section_chunks from record_section_chunks calls."
+          "Optional. If omitted, uses previously recorded section_starts from record_section_chunks calls."
         ),
       institutionId: z
         .string()
         .describe("The institution ID (e.g. 'iu')"),
     }),
-    execute: async ({ typst_structure, section_chunks, institutionId }) => {
+    execute: async ({ typst_structure, section_starts, institutionId }) => {
       const extraction = getStoredExtraction(sessionId);
       if (!extraction) {
         return {
@@ -266,11 +267,11 @@ export function createTools(sessionId: string) {
         };
       }
 
-      const chunks = section_chunks ?? getStoredSectionChunks(sessionId);
+      const starts = section_starts ?? getStoredSectionStarts(sessionId);
 
       const assembled = assembleDocument(
         typst_structure,
-        chunks,
+        starts,
         extraction.raw_text
       );
 
@@ -290,17 +291,19 @@ export function createTools(sessionId: string) {
 
   const recordSectionChunksTool = tool({
     description:
-      "Commit chunk indices for a section after user confirms. Stores server-side so build_document can read them without you tracking them in context.",
+      "Commit a section's starting character position after user confirmation. Stores server-side so build_document can slice the exact text. Use the char_start value from the get_document_chunks heading result.",
     inputSchema: z.object({
       marker: z
         .string()
         .describe("The {MARKER} name, e.g. 'CH1', 'ABSTRACT'"),
-      indices: z
-        .array(z.number())
-        .describe("Confirmed chunk indices for this section"),
+      char_start: z
+        .number()
+        .describe(
+          "The char_start value from the get_document_chunks heading result for this section"
+        ),
     }),
-    execute: async ({ marker, indices }) => {
-      storeSectionChunks(sessionId, marker, indices);
+    execute: async ({ marker, char_start }) => {
+      storeSectionStart(sessionId, marker, char_start);
       return { ok: true, marker };
     },
   });
@@ -361,45 +364,47 @@ function validateBrackets(code: string): string | null {
   return null;
 }
 
-function getChunksFromText(
-  rawText: string,
-  indices: number[],
-  charsPerChunk: number,
-  overlap: number
-): string {
-  const allChunks = chunkDocument(rawText, charsPerChunk, overlap);
-  const valid = [...new Set(indices)]
-    .filter((i) => i >= 0 && i < allChunks.length)
-    .sort((a, b) => a - b);
-
-  const ranges: Array<[number, number]> = [];
-  for (const idx of valid) {
-    const c = allChunks[idx];
-    const last = ranges[ranges.length - 1];
-    if (last && c.start_char <= last[1]) {
-      last[1] = Math.max(last[1], c.end_char);
-    } else {
-      ranges.push([c.start_char, c.end_char]);
-    }
-  }
-
-  return ranges.map(([start, end]) => rawText.slice(start, end)).join("\n\n");
-}
-
-function assembleDocument(
+export function assembleDocument(
   typstStructure: string,
-  sectionChunks: Record<string, number[]>,
+  sectionStarts: Record<string, number>,
   rawText: string
 ): string {
-  let result = typstStructure;
-  for (const [marker, indices] of Object.entries(sectionChunks)) {
-    const chunkText = getChunksFromText(rawText, indices, 5000, 500);
-    const escaped = escapeTypstText(chunkText);
-    result = result.replace(
-      new RegExp(`\\{${marker}\\}`, "g"),
-      `[${escaped}]`
-    );
+  const validSections: Array<[string, number]> = [];
+  for (const [marker, pos] of Object.entries(sectionStarts)) {
+    if (!typstStructure.includes(`{${marker}}`)) {
+      console.warn(
+        `[assembleDocument] orphaned section: ${marker} (no marker in template)`
+      );
+      continue;
+    }
+    const parsedPos = Number(pos);
+    if (isNaN(parsedPos) || parsedPos < 0) continue;
+    validSections.push([marker, Math.min(parsedPos, rawText.length)]);
   }
+
+  validSections.sort((a, b) => {
+    const pd = a[1] - b[1];
+    return pd !== 0 ? pd : a[0].localeCompare(b[0]);
+  });
+
+  const validMarkers = new Set(validSections.map((s) => s[0]));
+  let result = typstStructure.replace(
+    /\{([A-Z0-9_]+)\}/g,
+    (_match, name) => (validMarkers.has(name) ? _match : "[]")
+  );
+
+  for (let i = 0; i < validSections.length; i++) {
+    const [marker, pos] = validSections[i];
+    const startPos = i === 0 ? 0 : pos;
+    const nextPos =
+      i + 1 < validSections.length
+        ? validSections[i + 1][1]
+        : rawText.length;
+    const text = rawText.slice(startPos, nextPos);
+    const escaped = escapeTypstText(text);
+    result = result.split(`{${marker}}`).join(`[${escaped}]`);
+  }
+
   return result;
 }
 

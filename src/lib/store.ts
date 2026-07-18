@@ -55,7 +55,7 @@ interface SessionState {
   }>;
   passCount: number;
   failCount: number;
-  sectionChunks: Record<string, number[]>;
+  sectionStarts: Record<string, number>;
 }
 
 export interface StoreExtractResult {
@@ -76,7 +76,7 @@ function getOrCreate(sessionId: string): SessionState {
       violations: [],
       passCount: 0,
       failCount: 0,
-      sectionChunks: {},
+      sectionStarts: {},
     });
   }
   return store.get(sessionId)!;
@@ -107,20 +107,20 @@ export function getExtraction(sessionId: string): string | null {
   return store.get(sessionId)?.extraction?.raw_text ?? null;
 }
 
-export function storeSectionChunks(
+export function storeSectionStart(
   sessionId: string,
   marker: string,
-  indices: number[]
+  char_start: number
 ) {
   const state = getOrCreate(sessionId);
-  if (!state.sectionChunks) state.sectionChunks = {};
-  state.sectionChunks[marker] = indices;
+  if (!state.sectionStarts) state.sectionStarts = {};
+  state.sectionStarts[marker] = char_start;
 }
 
-export function getStoredSectionChunks(
+export function getStoredSectionStarts(
   sessionId: string
-): Record<string, number[]> {
-  return store.get(sessionId)?.sectionChunks ?? {};
+): Record<string, number> {
+  return store.get(sessionId)?.sectionStarts ?? {};
 }
 
 export function storePdf(sessionId: string, pdf: Uint8Array) {
@@ -153,6 +153,6 @@ export function getState(
     violations: state.violations,
     passCount: state.passCount,
     failCount: state.failCount,
-    sectionChunks: state.sectionChunks,
+    sectionStarts: state.sectionStarts,
   };
 }
