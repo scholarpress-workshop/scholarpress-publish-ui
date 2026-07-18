@@ -112,6 +112,9 @@ function assembleDocument(
     result = result.split(`{${marker}}`).join(`[${escaped}]`);
   }
 
+  // 4. Clean up any orphaned markers not recorded in any section
+  result = result.replace(/\{[A-Z0-9_]+\}/g, "[]");
+
   return result;
 }
 ```
@@ -304,5 +307,18 @@ Removed the `if (text.length === 0) continue;` guard. Empty sections must still 
 | Empty section produces `[]` in output | Zero-length slice → marker replaced with empty content block, not left as raw `{MARKER}` |
 | Marker with `$` character | `{CH_$1}` marker → no regex error, correct substitution |
 | NaN position skipped | NaN `char_start` → section excluded from output, no crash |
+
+## Fourth Peer Review Correction
+
+### Unmatched placeholder cleanup
+
+If `{MARKER}` exists in `typstStructure` but no corresponding section was recorded (agent missed it, or position was invalid), the placeholder leaks into the compiled Typst document, causing a compilation error. Add a final cleanup pass after all substitutions:
+
+```typescript
+result = result.replace(/\{[A-Z0-9_]+\}/g, "[]");
+```
+
+This replaces any remaining `{UPPERCASE_OR_NUMBER}` markers with an empty Typst content block `[]`.
+
 
 
