@@ -427,6 +427,11 @@ export function assembleDocument(
     return positionalSlice(typstStructure, sectionStarts, rawText);
   }
 
+  console.error(
+    "[assembleDocument] markdown mode",
+    { sections: Object.keys(sectionStarts).length, mdLen: markdownText.length }
+  );
+
   const valid: Array<[string, number]> = [];
   const headingSearchIndices = new Map<string, number>();
 
@@ -453,16 +458,25 @@ export function assembleDocument(
     const match = re.exec(markdownText);
     if (!match) {
       console.warn(
-        "[assembleDocument] heading not found in markdown: " + heading
+        `[assembleDocument] heading not found: "${heading}"`,
+        { pattern, mdPreview: markdownText.slice(0, 200) }
       );
       continue;
     }
+
+    console.error(
+      `[assembleDocument] heading found: "${heading}" at pos ${match.index}`
+    );
 
     valid.push([marker, match.index]);
     headingSearchIndices.set(searchKey, match.index + match[0].length);
   }
 
   valid.sort((a, b) => a[1] - b[1]);
+
+  console.error(
+    `[assembleDocument] ${valid.length}/${Object.keys(sectionStarts).length} sections matched`
+  );
 
   const markerContent = new Map<string, string>();
   for (let i = 0; i < valid.length; i++) {
