@@ -473,7 +473,7 @@ export function assembleDocument(
     markerContent.set(marker, escapeForTypstString(text));
   }
 
-  return typstStructure.replace(
+  const result = typstStructure.replace(
     /\{\{([a-zA-Z0-9_]+)\}\}/g,
     (_match, name) => {
       if (markerContent.has(name)) {
@@ -482,6 +482,10 @@ export function assembleDocument(
       return "[]";
     }
   );
+
+  return markerContent.size > 0
+    ? `#import "@preview/cmarker:0.1.0": render\n${result}`
+    : result;
 }
 
 function chunkDocument(
