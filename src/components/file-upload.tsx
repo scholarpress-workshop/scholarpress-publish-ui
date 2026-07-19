@@ -16,11 +16,10 @@ export function FileUpload({ onFileSelected, disabled }: FileUploadProps) {
   const handleFile = useCallback(
     (file: File) => {
       const validTypes = [
-        "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ];
       if (!validTypes.includes(file.type)) {
-        alert("Please upload a PDF or DOCX file.");
+        alert("Please upload a DOCX file.");
         return;
       }
       onFileSelected(file);
@@ -53,7 +52,7 @@ export function FileUpload({ onFileSelected, disabled }: FileUploadProps) {
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.docx"
+        accept=".docx"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -74,7 +73,7 @@ export function FileUpload({ onFileSelected, disabled }: FileUploadProps) {
           </button>
         </p>
         <p className="text-xs text-muted-foreground">
-          Currently supports PDF or DOCX
+          DOCX only — currently supports .docx files
         </p>
       </div>
     </div>
