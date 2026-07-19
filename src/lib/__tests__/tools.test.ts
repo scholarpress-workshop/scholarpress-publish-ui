@@ -142,7 +142,7 @@ describe("assembleDocument", () => {
   });
 
   it("markdown heading slicing with cmarker.render", () => {
-    const md = "# DEDICATION\nFor the young people.\n\n# ACKNOWLEDGEMENTS\nMany thanks.\n";
+    const md = "DEDICATION\nFor the young people.\n\nACKNOWLEDGEMENTS\nMany thanks.\n";
     const result = assembleDocument(
       "{{DED}}{{ACK}}",
       { DED: { heading: "DEDICATION" }, ACK: { heading: "ACKNOWLEDGEMENTS" } },
@@ -157,7 +157,7 @@ describe("assembleDocument", () => {
   });
 
   it("markdown duplicate heading sequential matching", () => {
-    const md = "# Summary\nFirst summary.\n\n# Summary\nSecond summary.\n";
+    const md = "Summary\nFirst summary.\n\nSummary\nSecond summary.\n";
     const result = assembleDocument(
       "{{S1}}{{S2}}",
       { S1: { heading: "Summary" }, S2: { heading: "Summary" } },
@@ -171,7 +171,7 @@ describe("assembleDocument", () => {
   });
 
   it("unmatched markers cleaned up on template skeleton", () => {
-    const md = "# INTRO\nIntro text.\n";
+    const md = "INTRO\nIntro text.\n";
     const result = assembleDocument(
       "{{INTRO}}{{MISSING}}",
       { INTRO: { heading: "INTRO" } },
@@ -184,7 +184,7 @@ describe("assembleDocument", () => {
   });
 
   it("cleanup regex does not match user content after substitution", () => {
-    const md = "# A\nhas {X_1} in it.\n\n# B\nhas {Y_2} in it.\n";
+    const md = "A\nhas {X_1} in it.\n\nB\nhas {Y_2} in it.\n";
     const result = assembleDocument(
       "{{A}}{{B}}",
       { A: { heading: "A" }, B: { heading: "B" } },
