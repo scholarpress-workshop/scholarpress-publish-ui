@@ -249,7 +249,12 @@ export function createTools(sessionId: string) {
           "The complete Typst assembly code (imports + function calls) with bare {MARKER} placeholders where body text goes. Example: body: {ABSTRACT} — NOT body: #str({ABSTRACT}) or body: [{ABSTRACT}]. Short fields should be literal values: title: \"My Title\", author: \"Jane Doe\"."
         ),
       section_starts: z
-        .record(z.number())
+        .record(
+          z.object({
+            heading: z.string().optional(),
+            position: z.number().optional(),
+          })
+        )
         .optional()
         .describe(
           "Optional. If omitted, uses previously recorded section_starts from record_section_chunks calls."
@@ -272,6 +277,7 @@ export function createTools(sessionId: string) {
       const assembled = assembleDocument(
         typst_structure,
         starts,
+        extraction.markdown_text ?? null,
         extraction.raw_text
       );
 
@@ -291,19 +297,22 @@ export function createTools(sessionId: string) {
 
   const recordSectionChunksTool = tool({
     description:
-      "Commit a section's starting character position after user confirmation. Stores server-side so build_document can slice the exact text. Use the char_start value from the get_document_chunks heading result.",
+      "Commit section boundaries after user confirmation. For DOCX: pass heading text for markdown slicing. For PDF: pass position offset for raw text slicing.",
     inputSchema: z.object({
       marker: z
         .string()
-        .describe("The {MARKER} name, e.g. 'CH1', 'ABSTRACT'"),
-      char_start: z
+        .describe("The {{MARKER}} name, e.g. 'CH1', 'ABSTRACT'"),
+      heading: z
+        .string()
+        .optional()
+        .describe("Heading text (for DOCX/Markdown slicing)"),
+      position: z
         .number()
-        .describe(
-          "The char_start value from the get_document_chunks heading result for this section"
-        ),
+        .optional()
+        .describe("Character offset (for PDF positional slicing)"),
     }),
-    execute: async ({ marker, char_start }) => {
-      storeSectionStart(sessionId, marker, char_start);
+    execute: async ({ marker, heading, position }) => {
+      storeSectionStart(sessionId, marker, { heading, position });
       return { ok: true, marker };
     },
   });
@@ -364,48 +373,115 @@ function validateBrackets(code: string): string | null {
   return null;
 }
 
-export function assembleDocument(
+function escapeForTypstString(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, (c) =>
+      `\\u{${c.charCodeAt(0).toString(16)}}`);
+}
+
+function positionalSlice(
   typstStructure: string,
-  sectionStarts: Record<string, number>,
+  sectionStarts: Record<string, { heading?: string; position?: number }>,
   rawText: string
 ): string {
-  const validSections: Array<[string, number]> = [];
-  for (const [marker, pos] of Object.entries(sectionStarts)) {
-    if (!typstStructure.includes(`{${marker}}`)) {
-      console.warn(
-        `[assembleDocument] orphaned section: ${marker} (no marker in template)`
-      );
-      continue;
-    }
-    const parsedPos = Number(pos);
-    if (isNaN(parsedPos) || parsedPos < 0) continue;
-    validSections.push([marker, Math.min(parsedPos, rawText.length)]);
+  const valid: Array<[string, number]> = [];
+  for (const [marker, item] of Object.entries(sectionStarts)) {
+    const pos = item && typeof item === "object" ? item.position : item;
+    if (typeof pos !== "number" || isNaN(pos) || pos < 0) continue;
+    valid.push([marker, Math.min(pos, rawText.length)]);
   }
+  valid.sort((a, b) => a[1] - b[1]);
 
-  validSections.sort((a, b) => {
-    const pd = a[1] - b[1];
-    return pd !== 0 ? pd : a[0].localeCompare(b[0]);
-  });
-
-  const validMarkers = new Set(validSections.map((s) => s[0]));
+  const validMarkers = new Set(valid.map((s) => s[0]));
   let result = typstStructure.replace(
     /\{([A-Z0-9_]+)\}/g,
     (_match, name) => (validMarkers.has(name) ? _match : "[]")
   );
 
-  for (let i = 0; i < validSections.length; i++) {
-    const [marker, pos] = validSections[i];
+  for (let i = 0; i < valid.length; i++) {
+    const [marker, pos] = valid[i];
     const startPos = i === 0 ? 0 : pos;
     const nextPos =
-      i + 1 < validSections.length
-        ? validSections[i + 1][1]
-        : rawText.length;
+      i + 1 < valid.length ? valid[i + 1][1] : rawText.length;
     const text = rawText.slice(startPos, nextPos);
     const escaped = escapeTypstText(text);
     result = result.split(`{${marker}}`).join(`[${escaped}]`);
   }
-
   return result;
+}
+
+export function assembleDocument(
+  typstStructure: string,
+  sectionStarts: Record<string, { heading?: string; position?: number }>,
+  markdownText: string | null | undefined,
+  rawText: string
+): string {
+  const useMarkdown = markdownText && markdownText.length > 0;
+
+  if (!useMarkdown) {
+    return positionalSlice(typstStructure, sectionStarts, rawText);
+  }
+
+  const valid: Array<[string, number]> = [];
+  const headingSearchIndices = new Map<string, number>();
+
+  for (const [marker, item] of Object.entries(sectionStarts)) {
+    const heading =
+      item && typeof item === "object" ? item.heading : item;
+    if (typeof heading !== "string" || heading.trim() === "") continue;
+
+    const escaped = heading.trim()
+      .replace(/[.*+?^${}()|\[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s+");
+
+    const fmt = "(?:\\*\\*\\*|___|\\*\\*|__|\\*|_)?";
+
+    const prefix = "(?:\\(?(?:\\d+(?:[-.]\\d+)*|[A-Za-z]\\d*(?:[-.]\\d+)*|[IVXLCDMivxlcdm]+)\\)?[.:-]?\\s+)?";
+
+    const pattern = `^#+\\s+${fmt}${prefix}${fmt}${escaped}${fmt}\\s*#*\\s*$`;
+    const re = new RegExp(pattern, "mig");
+
+    const searchKey = heading.trim().toLowerCase();
+    const startIndex = headingSearchIndices.get(searchKey) || 0;
+    re.lastIndex = startIndex;
+
+    const match = re.exec(markdownText);
+    if (!match) {
+      console.warn(
+        "[assembleDocument] heading not found in markdown: " + heading
+      );
+      continue;
+    }
+
+    valid.push([marker, match.index]);
+    headingSearchIndices.set(searchKey, match.index + match[0].length);
+  }
+
+  valid.sort((a, b) => a[1] - b[1]);
+
+  const markerContent = new Map<string, string>();
+  for (let i = 0; i < valid.length; i++) {
+    const [marker, pos] = valid[i];
+    const nextPos =
+      i + 1 < valid.length ? valid[i + 1][1] : markdownText.length;
+    const text = markdownText.slice(pos, nextPos);
+    markerContent.set(marker, escapeForTypstString(text));
+  }
+
+  return typstStructure.replace(
+    /\{\{([a-zA-Z0-9_]+)\}\}/g,
+    (_match, name) => {
+      if (markerContent.has(name)) {
+        return `#cmarker.render("${markerContent.get(name)}")`;
+      }
+      return "[]";
+    }
+  );
 }
 
 function chunkDocument(

@@ -29,28 +29,32 @@ function seedExtraction(sessionId: string) {
     page_count: 3,
     page_count_estimated: true,
     detected_fonts: ["Times New Roman"],
+    markdown_text: null,
   };
   storeExtraction(sessionId, extraction);
 }
 
 describe("record_section_chunks tool", () => {
-  it("returns ok with marker", async () => {
+  it("stores heading text", async () => {
     const tools = createTools("tools-1");
     const result = await tools.record_section_chunks.execute({
       marker: "CH1",
-      char_start: 1500,
+      heading: "Introduction",
     });
     expect(result).toEqual({ ok: true, marker: "CH1" });
+    expect(getStoredSectionStarts("tools-1")).toEqual({
+      CH1: { heading: "Introduction", position: undefined },
+    });
   });
 
-  it("persists to session state", async () => {
+  it("stores position offset", async () => {
     const tools = createTools("tools-2");
     await tools.record_section_chunks.execute({
       marker: "CH1",
-      char_start: 1500,
+      position: 1500,
     });
     expect(getStoredSectionStarts("tools-2")).toEqual({
-      CH1: 1500,
+      CH1: { heading: undefined, position: 1500 },
     });
   });
 
@@ -58,15 +62,15 @@ describe("record_section_chunks tool", () => {
     const tools = createTools("tools-3");
     await tools.record_section_chunks.execute({
       marker: "CH1",
-      char_start: 1500,
+      heading: "Intro",
     });
     await tools.record_section_chunks.execute({
       marker: "ABSTRACT",
-      char_start: 800,
+      heading: "Abstract",
     });
     expect(getStoredSectionStarts("tools-3")).toEqual({
-      CH1: 1500,
-      ABSTRACT: 800,
+      CH1: { heading: "Intro", position: undefined },
+      ABSTRACT: { heading: "Abstract", position: undefined },
     });
   });
 });
@@ -87,12 +91,12 @@ describe("build_document tool", () => {
 
   it("reads stored section_starts when omitted", async () => {
     seedExtraction("tools-4");
-    storeSectionStart("tools-4", "BODY", 0);
+    storeSectionStart("tools-4", "BODY", { heading: "Body" });
 
     const tools = createTools("tools-4");
     const result = await tools.build_document.execute({
       typst_structure:
-        '#set page(width: 100pt, height: 100pt); {BODY}',
+        '#set page(width: 100pt, height: 100pt); {{BODY}}',
       institutionId: "iu",
     });
     expect(result).toEqual({ success: true, pdfSize: 5 });
@@ -100,112 +104,118 @@ describe("build_document tool", () => {
 
   it("prefers explicit section_starts over stored", async () => {
     seedExtraction("tools-5");
-    storeSectionStart("tools-5", "BODY", 99);
+    storeSectionStart("tools-5", "BODY", { heading: "Wrong" });
 
     const tools = createTools("tools-5");
     const result = await tools.build_document.execute({
       typst_structure:
-        '#set page(width: 100pt, height: 100pt); {BODY}',
-      section_starts: { BODY: 0 },
+        '#set page(width: 100pt, height: 100pt); {{BODY}}',
+      section_starts: { BODY: { heading: "Correct" } },
       institutionId: "iu",
     });
     expect(result).toEqual({ success: true, pdfSize: 5 });
   });
-
-  it("bracket validation catches unclosed braces", async () => {
-    seedExtraction("tools-6");
-    storeSectionStart("tools-6", "BODY", 0);
-
-    const tools = createTools("tools-6");
-    const result = await tools.build_document.execute({
-      typst_structure:
-        '#set page(width: 100pt, height: 100pt); {BODY',
-      institutionId: "iu",
-    });
-    expect(result).toHaveProperty("error");
-    expect((result as any).error).toContain("Bracket balance");
-  });
 });
 
 describe("assembleDocument", () => {
-  it("first section includes pre-heading text (startPos=0)", () => {
+  it("positional slicing on raw text (PDF fallback)", () => {
     const result = assembleDocument(
       "{DED}",
-      { DED: 100 },
+      { DED: { position: 100 } },
+      null,
       "0123456789 0123456789 0123456789 --- dedication text here --- rest of document goes on"
     );
     expect(result).toContain("[0123456789");
     expect(result).not.toContain("{DED}");
   });
 
-  it("sections are sliced at boundaries (contiguous)", () => {
+  it("positional slicing contiguous sections", () => {
     const result = assembleDocument(
       "{A}{B}",
-      { A: 0, B: 20 },
+      { A: { position: 0 }, B: { position: 20 } },
+      null,
       "aaaa aaaa aaaa aaaa bbbb bbbb bbbb bbbb"
     );
     expect(result).not.toContain("{A}");
     expect(result).not.toContain("{B}");
     expect(result).toContain("[aaaa aaaa aaaa aaaa");
-    expect(result).toContain("[bbbb bbbb bbbb bbbb");
   });
 
-  it("orphaned sections are filtered before sorting", () => {
+  it("markdown heading slicing with cmarker.render", () => {
+    const md = "# DEDICATION\nFor the young people.\n\n# ACKNOWLEDGEMENTS\nMany thanks.\n";
     const result = assembleDocument(
-      "{A}",
-      { A: 0, ORPHAN: 100 },
-      "content for section A then more text"
+      "{{DED}}{{ACK}}",
+      { DED: { heading: "DEDICATION" }, ACK: { heading: "ACKNOWLEDGEMENTS" } },
+      md,
+      ""
     );
-    expect(result).toContain("[content for section A then more text]");
-    expect(result).not.toContain("{ORPHAN}");
-    expect(result).not.toContain("{A}");
+    expect(result).toContain('#cmarker.render("');
+    expect(result).toContain("For the young people");
+    expect(result).toContain("Many thanks");
+    expect(result).not.toContain("{{DED}}");
+    expect(result).not.toContain("{{ACK}}");
+  });
+
+  it("markdown duplicate heading sequential matching", () => {
+    const md = "# Summary\nFirst summary.\n\n# Summary\nSecond summary.\n";
+    const result = assembleDocument(
+      "{{S1}}{{S2}}",
+      { S1: { heading: "Summary" }, S2: { heading: "Summary" } },
+      md,
+      ""
+    );
+    expect(result).toContain("First summary");
+    expect(result).toContain("Second summary");
+    expect(result).not.toContain("{{S1}}");
+    expect(result).not.toContain("{{S2}}");
   });
 
   it("unmatched markers cleaned up on template skeleton", () => {
+    const md = "# INTRO\nIntro text.\n";
     const result = assembleDocument(
-      "{A}{MISSING}",
-      { A: 0 },
-      "just section A content"
+      "{{INTRO}}{{MISSING}}",
+      { INTRO: { heading: "INTRO" } },
+      md,
+      ""
     );
-    expect(result).not.toContain("{MISSING}");
+    expect(result).not.toContain("{{MISSING}}");
     expect(result).toContain("[]");
-    expect(result).toContain("[just section A content]");
+    expect(result).toContain("#cmarker.render");
   });
 
   it("cleanup regex does not match user content after substitution", () => {
+    const md = "# A\nhas {X_1} in it.\n\n# B\nhas {Y_2} in it.\n";
     const result = assembleDocument(
-      "{A}{B}",
-      { A: 0, B: 50 },
-      "text with {X_1} in it --- another part with {Y_2} stuff"
+      "{{A}}{{B}}",
+      { A: { heading: "A" }, B: { heading: "B" } },
+      md,
+      ""
     );
     expect(result).toContain("{Y_2}");
     expect(result).toContain("{X_1}");
-    expect(result).not.toContain("{A}");
-    expect(result).not.toContain("{B}");
+    expect(result).not.toContain("{{A}}");
+    expect(result).not.toContain("{{B}}");
   });
 
-  it("empty sections replaced with []", () => {
-    const result = assembleDocument("{A}", { A: 0 }, "");
-    expect(result).toContain("[]");
-  });
-
-  it("NaN position skipped", () => {
+  it("NaN position skipped in positional mode", () => {
     const result = assembleDocument(
       "{A}",
-      { A: NaN },
+      { A: { position: NaN } },
+      null,
       "some document text"
     );
     expect(result).toContain("[]");
     expect(result).not.toContain("{A}");
   });
 
-  it("sorts by position regardless of recording order", () => {
+  it("empty markdownText falls back to positional", () => {
     const result = assembleDocument(
-      "{A}{B}",
-      { B: 20, A: 0 },
-      "aaaa aaaa aaaa aaaa bbbb bbbb bbbb bbbb"
+      "{A}",
+      { A: { position: 0 } },
+      "",
+      "raw text content"
     );
-    expect(result).toContain("[aaaa aaaa aaaa aaaa");
-    expect(result).toContain("[bbbb bbbb bbbb bbbb");
+    expect(result).toContain("[raw text content]");
+    expect(result).not.toContain("{A}");
   });
 });

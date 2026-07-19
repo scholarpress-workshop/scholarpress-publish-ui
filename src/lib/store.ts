@@ -55,7 +55,7 @@ interface SessionState {
   }>;
   passCount: number;
   failCount: number;
-  sectionStarts: Record<string, number>;
+  sectionStarts: Record<string, { heading?: string; position?: number }>;
 }
 
 export interface StoreExtractResult {
@@ -64,6 +64,7 @@ export interface StoreExtractResult {
   page_count: number;
   page_count_estimated: boolean;
   detected_fonts: string[];
+  markdown_text: string | null;
 }
 
 const store = new Map<string, SessionState>();
@@ -110,16 +111,16 @@ export function getExtraction(sessionId: string): string | null {
 export function storeSectionStart(
   sessionId: string,
   marker: string,
-  char_start: number
+  value: { heading?: string; position?: number }
 ) {
   const state = getOrCreate(sessionId);
   if (!state.sectionStarts) state.sectionStarts = {};
-  state.sectionStarts[marker] = char_start;
+  state.sectionStarts[marker] = value;
 }
 
 export function getStoredSectionStarts(
   sessionId: string
-): Record<string, number> {
+): Record<string, { heading?: string; position?: number }> {
   return store.get(sessionId)?.sectionStarts ?? {};
 }
 

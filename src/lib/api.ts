@@ -17,6 +17,7 @@ export interface ExtractResult {
   raw_text: string;
   pages: Array<{ page_number: number; text: string; width: number; height: number }>;
   headings: Array<{ text: string; level: number; page_number: number }>;
+  markdown_text: string | null;
   metadata: {
     title: string | null;
     author: string | null;

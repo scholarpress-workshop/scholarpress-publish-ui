@@ -147,6 +147,7 @@ export function ChatPanel({
               page_count: result.metadata.page_count,
               page_count_estimated: result.metadata.page_count_estimated,
               detected_fonts: result.metadata.detected_fonts,
+              markdown_text: result.markdown_text,
             },
           }),
         });
