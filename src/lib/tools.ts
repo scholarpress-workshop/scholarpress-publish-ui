@@ -448,7 +448,8 @@ export function assembleDocument(
 
     const prefix = "(?:\\(?(?:\\d+(?:[-.]\\d+)*|[A-Za-z]\\d*(?:[-.]\\d+)*|[IVXLCDMivxlcdm]+)\\)?[.:-]?\\s+)?";
 
-    const pattern = `^#+\\s+${fmt}${prefix}${fmt}${escaped}${fmt}\\s*#*\\s*$`;
+    // Match heading as standalone line. anytomd produces plain text without # prefix.
+    const pattern = `^${fmt}${prefix}${escaped}${fmt}\\s*$`;
     const re = new RegExp(pattern, "mig");
 
     const searchKey = heading.trim().toLowerCase();
